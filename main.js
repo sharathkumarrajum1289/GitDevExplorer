@@ -7,5 +7,5 @@ elements.form.addEventListener('submit', (e) => {
 });
 
 window.addEventListener('load', () => {
-    fetchGithubProfile('octocat');
+    fetchGithubProfile('sharathkumarrajum1289');
 });
