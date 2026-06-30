@@ -1,94 +1,46 @@
-// api.js - GitHub API queries
-
-// Declare global data states explicitly to prevent strict-mode crashes
-let userData = {};
-let userRepos = [];
-let calculatedLangs = {};
-
-function parseHeaders(headers) {
-    // Defensive check: verify headers exist before reading them
-    if (!headers || typeof headers.get !== 'function') return;
-
+// api.js - GitHub REST Api Integrations
+function updateRateLimits(headers) {
     const limit = headers.get('X-RateLimit-Limit');
     const remaining = headers.get('X-RateLimit-Remaining');
-    
-    if (limit && remaining && elements.apiRem && elements.apiLimit && elements.apiDot) {
+    if (limit && remaining) {
         elements.apiRem.textContent = remaining;
         elements.apiLimit.textContent = limit;
-        
-        const remNum = parseInt(remaining, 10);
-        elements.apiDot.className = 'indicator-dot ' + 
-            (remNum > 30 ? 'status-good' : remNum > 10 ? 'status-warn' : 'status-danger');
+        elements.apiDot.className = 'status-dot ' + (remaining > 30 ? 'status-good' : remaining > 10 ? 'status-warning' : 'status-critical');
     }
 }
 
-async function fetchGithubProfile(username) {
-    // UI Visual states handling safely
-    if (elements.loading) elements.loading.classList.remove('hidden-element');
-    if (elements.dashboard) elements.dashboard.classList.add('hidden-element');
-    if (elements.error) elements.error.classList.add('hidden-element');
-    if (elements.btn) elements.btn.disabled = true;
+async function searchUser(username) {
+    elements.loading.classList.remove('element-hidden');
+    elements.dashboard.classList.add('element-hidden');
+    elements.error.classList.add('element-hidden');
+    elements.btn.disabled = true;
 
     try {
-        // Fetch User Profile Data
-        const profileRes = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`);
-        parseHeaders(profileRes.headers);
-        
-        if (!profileRes.ok) {
-            if (profileRes.status === 404) throw new Error('NOT_FOUND');
-            if (profileRes.status === 403) throw new Error('RATE_LIMITED');
-            throw new Error('API_ERROR');
-        }
-        userData = await profileRes.json();
+        const userRes = await fetch(`https://api.github.com/users/${username}`);
+        updateRateLimits(userRes.headers);
+        if (!userRes.ok) throw new Error(userRes.status === 404 ? 'NOT_FOUND' : 'API_ERROR');
+        state.user = await userRes.json();
 
-        // Fetch User Repositories Data
-        const reposRes = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}/repos?per_page=100&sort=updated`);
-        parseHeaders(reposRes.headers);
-        userRepos = reposRes.ok ? await reposRes.json() : [];
+        const repoRes = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`);
+        updateRateLimits(repoRes.headers);
+        state.repos = repoRes.ok ? await repoRes.json() : [];
 
-        // Compile logic and update views
-        compileLangs();
-        
-        if (typeof render === 'function') {
-            render();
-        }
-        
-        if (elements.dashboard) elements.dashboard.classList.remove('hidden-element');
+        calculateLangs();
+        renderProfile();
+        elements.dashboard.classList.remove('element-hidden');
     } catch (err) {
-        if (elements.error) {
-            elements.error.classList.remove('hidden-element');
-            
-            let title = 'Error';
-            let message = 'Failed to reach GitHub API.';
-            
-            if (err.message === 'NOT_FOUND') {
-                title = 'Profile Not Found';
-                message = 'No user matches that spelling.';
-            } else if (err.message === 'RATE_LIMITED') {
-                title = 'Rate Limit Exceeded';
-                message = 'GitHub API limit reached for your IP. Please try again in an hour.';
-            }
-
-            elements.error.innerHTML = `
-                <div class="error-text-content">
-                    <strong>${title}</strong>
-                    <p>${message}</p>
-                </div>`;
-        }
+        elements.error.classList.remove('element-hidden');
+        elements.error.innerHTML = `<h4>${err.message === 'NOT_FOUND' ? 'User Not Found' : 'Error'}</h4>
+            <p>${err.message === 'NOT_FOUND' ? 'Developer profile does not exist.' : 'Failed to query GitHub API.'}</p>`;
     } finally {
-        // Always reset UI elements back to operational state
-        if (elements.loading) elements.loading.classList.add('hidden-element');
-        if (elements.btn) elements.btn.disabled = false;
+        elements.loading.classList.add('element-hidden');
+        elements.btn.disabled = false;
     }
 }
 
-function compileLangs() {
-    calculatedLangs = {};
-    if (!Array.isArray(userRepos)) return;
-    
-    userRepos.forEach(repo => {
-        if (repo && repo.language) {
-            calculatedLangs[repo.language] = (calculatedLangs[repo.language] || 0) + 1;
-        }
+function calculateLangs() {
+    state.langs = {};
+    state.repos.forEach(r => {
+        if (r.language) state.langs[r.language] = (state.langs[r.language] || 0) + 1;
     });
 }
